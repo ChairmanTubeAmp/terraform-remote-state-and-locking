@@ -86,8 +86,25 @@ resource "aws_s3_bucket" "destination" {
   bucket   = "tfstate-cross-region-replica"
   provider = "aws.west"
 
+  server_side_encryption_configuration {
+    rule {
+      apply_server_side_encryption_by_default {
+        kms_master_key_id = "${aws_kms_key.tf_key_replica.arn}"
+        sse_algorithm     = "aws:kms"
+      }
+    }
+  }
+
   versioning {
     enabled = true
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  tags {
+    Name = "Terraform state bucket replica"
   }
 }
 
