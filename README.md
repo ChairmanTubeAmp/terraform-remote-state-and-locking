@@ -5,4 +5,4 @@ Assumes us-east-2 for most resources and us-west-1 for the cross region replica 
 
 Changes:
 * Now 0.12 compatible.
-* Handles all KMS replication permissions correctly thanks to @f0rk
+* Handles all KMS replication permissions correctly thanks to [@f0rk](https://github.com/f0rk)
