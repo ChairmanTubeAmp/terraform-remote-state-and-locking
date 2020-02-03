@@ -13,7 +13,7 @@ resource "aws_kms_key" "tf_key" {
 
 resource "aws_kms_key" "tf_key_replica" {
   description = "This key is used to encrypt the terraform bucket replica"
-    provider = "aws.west"
+  provider    = aws.west
 }
 
 resource "aws_iam_role" "replication" {
@@ -34,6 +34,7 @@ resource "aws_iam_role" "replication" {
   ]
 }
 POLICY
+
 }
 
 resource "aws_iam_policy" "replication" {
@@ -50,46 +51,84 @@ resource "aws_iam_policy" "replication" {
       ],
       "Effect": "Allow",
       "Resource": [
-        "${aws_s3_bucket.terraform_state.arn}"
+        "${aws_s3_bucket.source.arn}"
       ]
     },
     {
       "Action": [
         "s3:GetObjectVersion",
-        "s3:GetObjectVersionAcl"
+        "s3:GetObjectVersionAcl",
+        "s3:GetObjectVersionForReplication"
       ],
       "Effect": "Allow",
       "Resource": [
-        "${aws_s3_bucket.terraform_state.arn}/*"
+        "${aws_s3_bucket.source.arn}/*"
       ]
     },
     {
       "Action": [
         "s3:ReplicateObject",
-        "s3:ReplicateDelete"
+        "s3:ReplicateDelete",
+        "s3:ReplicateTags",
+        "s3:GetObjectVersionTagging"
       ],
       "Effect": "Allow",
       "Resource": "${aws_s3_bucket.destination.arn}/*"
+    },
+    {
+      "Action":[
+        "kms:Decrypt"
+      ],
+      "Effect":"Allow",
+      "Condition": {
+        "StringLike": {
+          "kms:ViaService":"s3.us-east-2.amazonaws.com",
+          "kms:EncryptionContext:aws:s3:arn": [
+            "${aws_s3_bucket.source.arn}/*"
+          ]
+        }
+      },
+      "Resource":[
+        "${aws_kms_key.tf_key.arn}"
+      ]
+    },
+    {
+      "Action":[
+        "kms:Encrypt"
+      ],
+      "Effect":"Allow",
+      "Condition": {
+        "StringLike": {
+          "kms:ViaService": "s3.us-west-1.amazonaws.com",
+          "kms:EncryptionContext:aws:s3:arn": [
+            "${aws_s3_bucket.destination.arn}/*"
+          ]
+        }
+      },
+      "Resource":[
+        "${aws_kms_key.tf_key_replica.arn}"
+      ]
     }
   ]
 }
 POLICY
+
 }
 
 resource "aws_iam_policy_attachment" "replication" {
   name       = "tf-iam-role-attachment-replication"
-  roles      = ["${aws_iam_role.replication.name}"]
-  policy_arn = "${aws_iam_policy.replication.arn}"
+  roles      = [aws_iam_role.replication.name]
+  policy_arn = aws_iam_policy.replication.arn
 }
 
 resource "aws_s3_bucket" "destination" {
-  bucket   = "tfstate-cross-region-replica"
-  provider = "aws.west"
+  bucket   = "mycorp-terraform-state-cross-region-replica"
+  provider = aws.west
 
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        kms_master_key_id = "${aws_kms_key.tf_key_replica.arn}"
+        kms_master_key_id = aws_kms_key.tf_key_replica.arn
         sse_algorithm     = "aws:kms"
       }
     }
@@ -103,18 +142,18 @@ resource "aws_s3_bucket" "destination" {
     prevent_destroy = true
   }
 
-  tags {
+  tags = {
     Name = "Terraform state bucket replica"
   }
 }
 
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = "tfstate"
+resource "aws_s3_bucket" "source" {
+  bucket = "mycorp-terraform-state"
 
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        kms_master_key_id = "${aws_kms_key.tf_key.arn}"
+        kms_master_key_id = aws_kms_key.tf_key.arn
         sse_algorithm     = "aws:kms"
       }
     }
@@ -128,11 +167,19 @@ resource "aws_s3_bucket" "terraform_state" {
     prevent_destroy = true
   }
 
+  lifecycle_rule {
+    enabled = true
+
+    noncurrent_version_expiration {
+      days = 90
+    }
+  }
+
   replication_configuration {
-    role = "${aws_iam_role.replication.arn}"
+    role = aws_iam_role.replication.arn
 
     rules {
-      id     = "cross_region_replica_for_tfstate"
+      id     = "mycorp-terraform-state-cross-region-replica"
       prefix = ""
       status = "Enabled"
 
@@ -143,20 +190,20 @@ resource "aws_s3_bucket" "terraform_state" {
       }
 
       destination {
-        bucket             = "${aws_s3_bucket.destination.arn}"
+        bucket             = aws_s3_bucket.destination.arn
         storage_class      = "STANDARD"
-        replica_kms_key_id = "${aws_kms_key.tf_key_replica.arn}"
+        replica_kms_key_id = aws_kms_key.tf_key_replica.arn
       }
     }
   }
 
-  tags {
+  tags = {
     Name = "Terraform state bucket"
   }
 }
 
 resource "aws_dynamodb_table" "terraform_state_lock" {
-  name           = "tf_state_lock"
+  name           = "mycorp_terraform_state_lock"
   read_capacity  = 1
   write_capacity = 1
   hash_key       = "LockID"
