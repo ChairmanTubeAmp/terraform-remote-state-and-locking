@@ -4,5 +4,5 @@ A stand-alone Terraform module that initializes an encrypted, replicated S3 buck
 Assumes us-east-2 for most resources and us-west-1 for the cross region replica S3 bucket.
 
 Changes:
-* Now 0.12 compatible.
+* Now requires Terraform 0.12 or later.
 * Handles all KMS replication permissions correctly thanks to [@f0rk](https://github.com/f0rk)
